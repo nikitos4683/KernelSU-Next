@@ -1,7 +1,6 @@
 import com.android.build.api.dsl.ApplicationDefaultConfig
 import com.android.build.api.dsl.CommonExtension
 import com.android.build.gradle.api.AndroidBasePlugin
-import java.io.ByteArrayOutputStream
 
 plugins {
     alias(libs.plugins.agp.app) apply false
@@ -37,14 +36,40 @@ val androidTargetCompatibility = JavaVersion.VERSION_21
 val managerVersionCode by extra(getVersionCode())
 val managerVersionName by extra(getVersionName())
 
-fun getGitCommitCount(): Int {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "rev-list", "--count", "HEAD"))
-    return process.inputStream.bufferedReader().use { it.readText().trim().toInt() }
+fun runGitCommand(vararg args: String): String {
+    val process = ProcessBuilder("git", *args)
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+    process.waitFor()
+    return if (process.exitValue() == 0) output else ""
 }
 
-fun getGitDescribe(): String {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "describe", "--tags", "--always"))
-    return process.inputStream.bufferedReader().use { it.readText().trim() }
+fun getGitCommitCount(): Int {
+    return runGitCommand("rev-list", "--count", "HEAD").toInt()
+}
+
+fun getGitBranchName(): String {
+    return runGitCommand("rev-parse", "--abbrev-ref", "HEAD")
+}
+
+fun getGitShortSha(): String {
+    return runGitCommand("rev-parse", "--short=8", "HEAD")
+}
+
+fun normalizeVersionBranch(branch: String): String {
+    return branch
+        .removePrefix("origin/")
+        .removePrefix("refs/heads/")
+        .removePrefix("agent/")
+        .removeSuffix("-build-manager")
+        .replace('/', '-')
+        .replace(Regex("[^A-Za-z0-9._-]"), "-")
+        .trim('-')
+        .ifEmpty { "dev" }
+        .take(16)
+        .trim('-')
 }
 
 fun getVersionCode(): Int {
@@ -54,7 +79,9 @@ fun getVersionCode(): Int {
 }
 
 fun getVersionName(): String {
-    return getGitDescribe()
+    val branch = normalizeVersionBranch(getGitBranchName())
+    val shortSha = getGitShortSha()
+    return "$branch-$shortSha-nikitos4683"
 }
 
 subprojects {
